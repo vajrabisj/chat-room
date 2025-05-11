@@ -1,0 +1,11 @@
+{:paths ["src" "resources"]
+ :deps {org.clojure/clojure {:mvn/version "1.11.1"}
+        ring/ring-core {:mvn/version "1.12.2"}
+        compojure/compojure {:mvn/version "1.7.1"}
+        http-kit/http-kit {:mvn/version "2.8.0"}
+        net.clojars.wkok/openai-clojure {:mvn/version "0.22.0"} 
+        org.clojure/core.async {:mvn/version "1.6.681"}
+        org.clojure/data.json {:mvn/version "2.5.1"}
+        clj-http/clj-http {:mvn/version "3.13.0"}}
+ :aliases
+ {:run {:main-opts ["-m" "chat.server"]}}}

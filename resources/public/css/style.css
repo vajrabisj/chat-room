@@ -1,0 +1,93 @@
+#chat-container {
+    max-width: 800px;
+    height: 600px;
+    margin: 20px auto;
+    border: 1px solid #ccc;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+}
+
+#messages {
+    flex-grow: 1;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    padding: 10px;
+    margin-bottom: 10px;
+}
+
+.message {
+    margin: 5px 0;
+    padding: 8px;
+    border-radius: 5px;
+    max-width: 70%;
+    white-space: pre-wrap;
+}
+
+.message.michael {
+    background-color: #e0f7fa;
+    border-right: 4px solid #0288d1;
+    margin-left: auto !important; /* 强制右对齐 */
+    text-align: right !important; /* 强制文字右对齐 */
+}
+
+.message.openai {
+    background-color: #f1f8e9;
+    border-left: 4px solid #4caf50;
+}
+
+.message.grok {
+    background-color: #ffebee;
+    border-left: 4px solid #d81b60;
+}
+
+.message.deepseek {
+    background-color: #FFFFE0;
+    border-left: 4px solid #333333;
+}
+
+#input-area {
+    display: flex;
+    gap: 10px;
+}
+
+#message-input {
+    flex-grow: 1;
+    padding: 5px;
+    font-size: 16px; /* 提升手机输入可读性 */
+}
+
+button {
+    padding: 5px 10px;
+    font-size: 16px;
+}
+
+/* 手机适配 */
+@media (max-width: 600px) {
+    #chat-container {
+        max-width: 100%; /* 全宽 */
+        height: 80vh; /* 占屏幕高度的80% */
+        margin: 10px;
+        padding: 5px;
+    }
+
+    #messages {
+        padding: 5px;
+    }
+
+    .message {
+        max-width: 85%; /* 手机上消息稍宽 */
+        font-size: 14px; /* 字体稍小 */
+    }
+
+    #message-input {
+        font-size: 14px;
+        padding: 8px; /* 增大触摸区域 */
+    }
+
+    button {
+        font-size: 14px;
+        padding: 8px 12px;
+    }
+}
