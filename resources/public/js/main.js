@@ -1,4 +1,4 @@
-const ws = new WebSocket("ws://localhost:3000/ws");
+const ws = new WebSocket("ws://vajra.one:3000/ws");
 const messages = document.getElementById("messages");
 const input = document.getElementById("message-input");
 
