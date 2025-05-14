@@ -42,6 +42,16 @@
     border-left: 4px solid #d81b60;
 }
 
+.message.gemini {
+    background-color: #f3e5f5; /* 浅紫色 */
+    border-left: 4px solid #6a1b9a; /* 深紫色 */
+}
+
+.message.Qwen {
+    background-color: #fff3e0; /* 浅橙色 */
+    border-left: 4px solid #f57c00; /* 深橙色 */
+}
+
 .message.deepseek {
     background-color: #FFFFE0;
     border-left: 4px solid #333333;

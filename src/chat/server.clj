@@ -7,7 +7,9 @@
             [wkok.openai-clojure.api :as openai]
             [clojure.data.json :as json]
             [clojure.java.io :as io]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [cheshire.core :as jsn]
+            [clj-http.client :as client]))
 
 ;; 存储所有WebSocket客户端的通道
 (def clients (atom #{}))
@@ -18,7 +20,49 @@
     (http/send! client (json/write-str msg))))
 
 (def chat-history (atom [{:role "system"
-                          :content "你是聊天室的一员，回应其他成员的信息，略带幽默，要简洁，不要超过三句话"}]))
+                          :content "你是聊天室的一员，回应其他成员的信息，偶尔略带幽默，要简洁，不要超过三句话，不需要对每句话标号。当信息是以“上师”开头，其他成员的回复就不能展示幽默，要表示尊重。当信息是以“干活干活”开头，其他成员的回复不受三句话的要求制约，要专业认真地回复。当信息是以“聊天聊天”开头，其他成员的回复就需要恢复到根据上述的系统设置来。"}]))
+
+(defn extract-after-think [response]
+  (let [parts (str/split response #"</think>")]
+    (if (> (count parts) 1)
+      (str/trim (nth parts 1)) ; Return the content after </think>                                               
+      response)))
+
+(defn messages-to-gemini-contents [messages]
+  (let [system-message (first (filter #(= (:role %) "system") messages))
+        user-messages (filter #(not= (:role %) "system") messages)]
+    (cond-> {:contents (mapv (fn [{:keys [role content]}]
+                               {:role (if (= role "assistant") "model" role)
+                                :parts [{:text content}]})
+                             user-messages)}
+      system-message (assoc :system_instruction
+                            {:parts [{:text (:content system-message)}]}))))
+
+(defn call-gemini-api [api-key model-name messages]
+  (let [api-url (str "https://generativelanguage.googleapis.com/v1beta/models/" model-name ":generateContent")
+        headers {"Content-Type" "application/json"}
+        body (messages-to-gemini-contents messages)
+        query-params {:key api-key}]
+    ;; ----------- 非常重要的诊断步骤开始 -----------                                                                                                 
+      (println "========== MESSAGES BEING SENT TO GEMINI START ==========")
+      (clojure.pprint/pprint body) ; 使用 pprint 格式化打印，方便阅读                                                                  
+      (println "========== MESSAGES BEING SENT TO GEMINI END ==========")
+      ;; ----------- 非常重要的诊断步骤结束 ----------- 
+    (try
+      (let [response (client/post api-url {:headers headers
+                                          :query-params query-params
+                                          :body (jsn/generate-string body)
+                                          :throw-exceptions false
+                                          :as :json})]
+        (if (= 200 (:status response))
+          (:body response)
+          {:error true
+           :status (:status response)
+           :body (:body response)}))
+      (catch Exception e
+        {:error true
+         :message (str "请求异常: " (.getMessage e))}))))
+
 
 (defn ws-handler [req]
   (http/with-channel req channel
@@ -101,10 +145,70 @@
                                (println "Grok error:" (.getMessage e))
                                (put! llm-chan :grok-error))))
 
-                         ;; DeepSeek 调用（等待 Grok 完成）
+                         (go
+                           (println "Waiting for Grok to complete for Grok...")
+                           (<! llm-chan) ; 等待 OpenAI 完成
+                           (println "Starting Gemini call...")
+                           (try
+                             (let [messages-for-gemini @chat-history
+                                   api-key (System/getenv "GEMINI_API_KEY")
+                                   model-name "gemini-2.0-flash"
+                                   resp (call-gemini-api api-key model-name messages-for-gemini)]
+                               (println "GEMINI response:" resp)
+                               (if (:error resp)
+                                 (do
+                                   (println "GEMINI error:" (:message resp (:status resp)))
+                                   (put! llm-chan :gemini-error))
+                                 (when-let [content (get-in resp [:candidates 0 :content :parts 0 :text])]
+                                   (broadcast! {:from "gemini" :text content})
+                                   (put! llm-chan :gemini-done))))
+                             (catch Exception e
+                               (println "GEMINI error:" (.getMessage e))
+                               (put! llm-chan :gemini-error))))
+
+                         (go                                                                                                                          
+                           (println "Waiting for Gemini to complete for Grok...")                                                                         
+                           (<! llm-chan) ; 等 ಈ OpenAI ಪೂರ್ಣಗೊಂಡಿದೆ                                                                                      
+                           (println "Starting Qwen call...")                                                                                            
+                           (try                                                                                                                         
+                             (let [ messages-for-qwen @chat-history                                                                                     
+                                   resp (openai/create-chat-completion                                                                                  
+                                         {:model "qwen-max"                                                                        
+                                          :messages messages-for-qwen                                                                                   
+                                          :stream false}                                                                                                
+                                         {:api-key (System/getenv "DASHSCOPE_API_KEY")                                                                       
+                                          :api-endpoint "https://dashscope.aliyuncs.com/compatible-mode/v1"})]                         
+                               (println "Qwen response:" resp)                                                                                          
+                               (when-let [content (get-in resp [:choices 0 :message :content])]                                                         
+                                 (broadcast! {:from "Qwen" :text content})                                                        
+                                 (put! llm-chan :qwen-done)))                                                                                           
+                             (catch Exception e                                                                                                         
+                               (println "Qwen error:" (.getMessage e))                                                                                  
+                               (put! llm-chan :qwen-error))))
+
+                         #_(go
+                           (println "Waiting for Grok to complete for Grok...")
+                           (<! llm-chan) ; 等 ಈ OpenAI ಪೂರ್ಣಗೊಂಡಿದೆ                                               
+                           (println "Starting Guru call...")
+                           (try
+                             (let [ messages-for-guru @chat-history
+                                   resp (openai/create-chat-completion
+                                         {:model "deepseek-r1-distill-llama-70b"
+                                          :messages messages-for-guru
+                                          :stream false}
+                                         {:api-key (System/getenv "GURU_API_KEY")
+                                          :api-endpoint "https://agent-f21a76a2830b44f6220f-tfj36.ondigitalocean.app/api/v1"})]
+                               (println "GURU response:" resp)
+                               (when-let [content (get-in resp [:choices 0 :message :content])]
+                                 (broadcast! {:from "GURU" :text (extract-after-think content)})
+                                 (put! llm-chan :guru-done)))
+                             (catch Exception e
+                               (println "GURU error:" (.getMessage e))
+                               (put! llm-chan :guru-error))))
+                         
 ;; DeepSeek 调用（等待 Grok 完成）
 (go
-  (println "Waiting for Grok to complete for DeepSeek...")
+  (println "Waiting for Gemini to complete for DeepSeek...")
   (<! llm-chan)
   (println "Starting DeepSeek call...")
   (try
